@@ -2,14 +2,14 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 
 	_ "github.com/lib/pq"
 )
 
 type Storage interface {
-	CreateAccount(*Account) (*Account, error)
+	CreateAccount(*Account) error
 	DeleteAccount(int) error
-	UpdateAccount(*Account) (*Account, error)
 	GetAccountById(int) (*Account, error)
 }
 
@@ -50,18 +50,59 @@ func (s *PostgresStore) createAccountTable() error {
 	return err
 }
 
-func (s *PostgresStore) CreateAccount(account *Account) (*Account, error) {
-	return nil, nil
-}
+func (s *PostgresStore) CreateAccount(account *Account) error {
+	query := `
+		insert into account
+		(first_name, last_name, iban, balance, created_at) 
+		values 
+		($1, $2, $3, $4, $5)
+		RETURNING id
+	`
+	err := s.db.QueryRow(
+		query,
+		account.FirstName,
+		account.LastName,
+		account.IBAN,
+		account.Balance,
+		account.CreatedAt,
+	).Scan(&account.ID)
 
-func (s *PostgresStore) DeleteAccount(accountId int) error {
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func (s *PostgresStore) UpdateAccount(account *Account) (*Account, error) {
-	return nil, nil
+func (s *PostgresStore) DeleteAccount(accountId int) error {
+	_, err := s.db.Query("delete from account where id=$1", accountId)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *PostgresStore) GetAccountById(accountId int) (*Account, error) {
-	return nil, nil
+	rows, err := s.db.Query("select * from account where id=$1", accountId)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		return scanAccount(rows)
+	}
+	return nil, fmt.Errorf("Account with id %d not found", accountId)
+}
+
+func scanAccount(rows *sql.Rows) (*Account, error) {
+	account := new(Account)
+	err := rows.Scan(
+		&account.ID,
+		&account.FirstName,
+		&account.LastName,
+		&account.IBAN,
+		&account.Balance,
+		&account.CreatedAt,
+	)
+	return account, err
 }
