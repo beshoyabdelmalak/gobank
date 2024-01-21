@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
+	"github.com/golang-jwt/jwt"
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type APIServer struct {
@@ -34,9 +38,37 @@ func (s *APIServer) Run() {
 	router.HandleFunc("/accounts/{id}", makeHTTPHandleFunc(s.handleGetAccount)).Methods("GET")
 	router.HandleFunc("/accounts", makeHTTPHandleFunc(s.handleCreateAccount)).Methods("POST")
 	router.HandleFunc("/accounts/{id}", makeHTTPHandleFunc(s.handleDeleteAccount)).Methods("DELETE")
+	router.HandleFunc("/login", makeHTTPHandleFunc(s.handleLogin)).Methods("POST")
 
 	log.Println("JSON API server running on port:", s.listenAddr)
 	http.ListenAndServe(s.listenAddr, router)
+}
+
+func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
+	loginReq := new(LoginRequest)
+
+	if err := json.NewDecoder(r.Body).Decode(loginReq); err != nil {
+		return err
+	}
+
+	account, err := s.store.GetAccountByIban(loginReq.IBAN)
+	if err != nil {
+		return err
+	}
+	if !checkPasswordHash(loginReq.Password, account.EncryptedPassword) {
+		return fmt.Errorf("Access denied")
+	}
+
+	token, err := CreateToken(loginReq.IBAN)
+	if err != nil {
+		return err
+	}
+
+	loginResponse := &LoginResponse{
+		IBAN:  loginReq.IBAN,
+		Token: token,
+	}
+	return WriteJSON(w, http.StatusOK, loginResponse)
 }
 
 func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
@@ -53,12 +85,16 @@ func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) err
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	createAccountReq := new(CreateAccountRequest)
-	if err := json.NewDecoder(r.Body).Decode(createAccountReq); err != nil {
+	createReq := new(CreateAccountRequest)
+	if err := json.NewDecoder(r.Body).Decode(createReq); err != nil {
 		return err
 	}
 
-	account := NewAccount(createAccountReq.FirstName, createAccountReq.LastName)
+	account, err := NewAccount(createReq.FirstName, createReq.LastName, createReq.Password)
+	if err != nil {
+		return err
+	}
+
 	if err := s.store.CreateAccount(account); err != nil {
 		return err
 	}
@@ -103,4 +139,51 @@ func getId(r *http.Request) (int, error) {
 		return id, fmt.Errorf("Invalid id: %v", idStr)
 	}
 	return id, nil
+}
+
+func checkPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
+
+func CreateToken(iban string) (string, error) {
+	expirationTime := time.Now().Add(60 * time.Minute)
+	jwtKey := os.Getenv("JWT_SECRET")
+
+	claims := &Claims{
+		IBAN: iban,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+			IssuedAt:  time.Now().Unix(),
+			Issuer:    "gobank",
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	tokenString, err := token.SignedString([]byte(jwtKey))
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
+}
+
+func ValidateToken(tokenString string) (*Claims, error) {
+	jwtKey := os.Getenv("JWT_SECRET")
+	claims := new(Claims)
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+
+	return claims, nil
 }
