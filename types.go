@@ -41,7 +41,7 @@ type Account struct {
 	LastName          string    `json:"lastName"`
 	EncryptedPassword string    `json:"encryptedPassword"`
 	IBAN              string    `json:"iban"`
-	Balance           int64     `json:"balance"`
+	Balance           float64   `json:"balance"`
 	CreatedAt         time.Time `json:"createdAt"`
 }
 
@@ -57,6 +57,7 @@ func NewAccount(firstName, lastName, password string) (*Account, error) {
 		LastName:          lastName,
 		EncryptedPassword: string(bytes),
 		IBAN:              strconv.Itoa(rand.Intn(1000000)),
+		Balance:           float64(rand.Intn(1000000)),
 		CreatedAt:         time.Now().UTC(),
 	}, nil
 }

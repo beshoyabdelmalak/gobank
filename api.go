@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt"
@@ -39,6 +41,7 @@ func (s *APIServer) Run() {
 	router.HandleFunc("/accounts", makeHTTPHandleFunc(s.handleCreateAccount)).Methods("POST")
 	router.HandleFunc("/accounts/{id}", makeHTTPHandleFunc(s.handleDeleteAccount)).Methods("DELETE")
 	router.HandleFunc("/login", makeHTTPHandleFunc(s.handleLogin)).Methods("POST")
+	router.HandleFunc("/transfer", validateTokenMiddleware(makeHTTPHandleFunc(s.handleTransfer))).Methods("POST")
 
 	log.Println("JSON API server running on port:", s.listenAddr)
 	http.ListenAndServe(s.listenAddr, router)
@@ -114,7 +117,22 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	// get the claims of the JWT token
+	claims, ok := r.Context().Value("claims").(*Claims)
+	if !ok {
+		return fmt.Errorf("no claims found in request context")
+	}
+	fromAccountIban := claims.IBAN
+
+	transferReq := new(TransferRequest)
+	if err := json.NewDecoder(r.Body).Decode(&transferReq); err != nil {
+		return err
+	}
+
+	if err := s.store.TransferFunds(fromAccountIban, transferReq.ToAccountIban, transferReq.Amount); err != nil {
+		return err
+	}
+	return WriteJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
@@ -128,6 +146,34 @@ func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
 		if err := f(w, r); err != nil {
 			WriteJSON(w, http.StatusBadRequest, APIError{Error: err.Error()})
 		}
+	}
+}
+
+func validateTokenMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			WriteJSON(w, http.StatusBadRequest, APIError{Error: "Authorization header is required"})
+			return
+		}
+
+		headerParts := strings.Split(authHeader, " ")
+		if len(headerParts) != 2 || headerParts[0] != "Bearer" {
+			WriteJSON(w, http.StatusBadRequest, APIError{Error: "Authorization header must be in the format 'Bearer {token}'"})
+			return
+		}
+
+		tokenStr := headerParts[1]
+
+		claims, err := ValidateToken(tokenStr)
+		if err != nil {
+			WriteJSON(w, http.StatusBadRequest, APIError{Error: "Access Denied"})
+			return
+		}
+
+		// Store the claims in the context
+		ctx := context.WithValue(r.Context(), "claims", claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
 
@@ -174,7 +220,7 @@ func ValidateToken(tokenString string) (*Claims, error) {
 	claims := new(Claims)
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
+		return []byte(jwtKey), nil
 	})
 
 	if err != nil {

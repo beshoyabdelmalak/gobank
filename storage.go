@@ -12,6 +12,7 @@ type Storage interface {
 	DeleteAccount(int) error
 	GetAccountById(int) (*Account, error)
 	GetAccountByIban(string) (*Account, error)
+	TransferFunds(fromIban string, toIban string, amount float64) error
 }
 
 type PostgresStore struct {
@@ -45,7 +46,7 @@ func (s *PostgresStore) createAccountTable() error {
 		last_name varchar(70),
 		password varchar(100),
 		iban varchar(70),
-		balance int,
+		balance float,
 		created_at timestamp
 	)`
 	_, err := s.db.Exec(query)
@@ -108,6 +109,55 @@ func (s *PostgresStore) GetAccountByIban(accountIban string) (*Account, error) {
 		return scanAccount(rows)
 	}
 	return nil, fmt.Errorf("Account with IBAN number %s not found", accountIban)
+}
+
+func (s *PostgresStore) TransferFunds(fromIban string, toIban string, amount float64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	fromAccount, err := s.lockAccount(tx, fromIban)
+	if err != nil {
+		return err
+	}
+	if amount > fromAccount.Balance {
+		return fmt.Errorf("balance not sufficient")
+	}
+
+	updateBalance := func(iban string, balance float64) error {
+		_, err := tx.Exec("update account set balance = $2 where iban = $1", iban, balance)
+		return err
+	}
+
+	if err := updateBalance(fromIban, fromAccount.Balance-amount); err != nil {
+		return err
+	}
+
+	toAccount, err := s.lockAccount(tx, toIban)
+	if err != nil {
+		return err
+	}
+
+	if err := updateBalance(toIban, toAccount.Balance+amount); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *PostgresStore) lockAccount(tx *sql.Tx, iban string) (*Account, error) {
+	// lockAccount locks the specified account for update and returns its details
+	var account Account
+
+	query := `SELECT iban, balance FROM accounts WHERE iban = $1 FOR UPDATE;`
+	err := tx.QueryRow(query, iban).Scan(&account.IBAN, &account.Balance)
+	if err != nil {
+		return nil, err
+	}
+
+	return &account, nil
 }
 
 func scanAccount(rows *sql.Rows) (*Account, error) {
