@@ -16,6 +16,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type contextKey int
+
+const claimsKey contextKey = iota
+
 type APIServer struct {
 	listenAddr string
 	store      Storage
@@ -44,7 +48,9 @@ func (s *APIServer) Run() {
 	router.HandleFunc("/transfer", validateTokenMiddleware(makeHTTPHandleFunc(s.handleTransfer))).Methods("POST")
 
 	log.Println("JSON API server running on port:", s.listenAddr)
-	http.ListenAndServe(s.listenAddr, router)
+	if err := http.ListenAndServe(s.listenAddr, router); err != nil {
+		log.Fatal("Could not bring up the server")
+	}
 }
 
 func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
@@ -118,7 +124,7 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
 	// get the claims of the JWT token
-	claims, ok := r.Context().Value("claims").(*Claims)
+	claims, ok := r.Context().Value(claimsKey).(*Claims)
 	if !ok {
 		return fmt.Errorf("no claims found in request context")
 	}
@@ -144,7 +150,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := f(w, r); err != nil {
-			WriteJSON(w, http.StatusBadRequest, APIError{Error: err.Error()})
+			_ = WriteJSON(w, http.StatusBadRequest, APIError{Error: err.Error()})
 		}
 	}
 }
@@ -153,13 +159,13 @@ func validateTokenMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			WriteJSON(w, http.StatusBadRequest, APIError{Error: "Authorization header is required"})
+			_ = WriteJSON(w, http.StatusBadRequest, APIError{Error: "Authorization header is required"})
 			return
 		}
 
 		headerParts := strings.Split(authHeader, " ")
 		if len(headerParts) != 2 || headerParts[0] != "Bearer" {
-			WriteJSON(w, http.StatusBadRequest, APIError{Error: "Authorization header must be in the format 'Bearer {token}'"})
+			_ = WriteJSON(w, http.StatusBadRequest, APIError{Error: "Authorization header must be in the format 'Bearer {token}'"})
 			return
 		}
 
@@ -167,12 +173,12 @@ func validateTokenMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		claims, err := ValidateToken(tokenStr)
 		if err != nil {
-			WriteJSON(w, http.StatusBadRequest, APIError{Error: "Access Denied"})
+			_ = WriteJSON(w, http.StatusBadRequest, APIError{Error: "Access Denied"})
 			return
 		}
 
 		// Store the claims in the context
-		ctx := context.WithValue(r.Context(), "claims", claims)
+		ctx := context.WithValue(r.Context(), claimsKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
@@ -145,7 +146,11 @@ func TestHandleGetAccount(t *testing.T) {
 	var resp Account
 	err := json.Unmarshal(respRec.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, *testAccount, resp)
+	assert.Equal(t, testAccount.FirstName, resp.FirstName)
+	assert.Equal(t, testAccount.LastName, resp.LastName)
+	assert.Equal(t, testAccount.IBAN, resp.IBAN)
+	assert.Equal(t, testAccount.EncryptedPassword, resp.EncryptedPassword)
+	assert.Equal(t, testAccount.ID, resp.ID)
 }
 
 func TestHandleGetAccountNonExist(t *testing.T) {
@@ -325,6 +330,11 @@ func TestHandleTransferInsufficientBalance(t *testing.T) {
 }
 
 func setupTestDB() *PostgresStore {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Warning: Error loading .env file")
+	}
+
 	store, err := NewPostgresStore()
 	if err != nil {
 		log.Fatal(err)

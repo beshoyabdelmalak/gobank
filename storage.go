@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 
 	_ "github.com/lib/pq"
@@ -121,7 +122,11 @@ func (s *PostgresStore) TransferFunds(fromIban string, toIban string, amount flo
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Could not roll back: %v\n", err)
+		}
+	}()
 
 	fromAccount, err := s.lockAccount(tx, fromIban)
 	if err != nil {

@@ -36,7 +36,7 @@ jobs:
     - name: Run Go Linter
       uses: golangci/golangci-lint-action@v2
       with:
-        version: v1.40
+        version: v1.55.2
         args: ./...
 
     - name: Run Tests
@@ -44,5 +44,5 @@ jobs:
         POSTGRES_DB: ${{ env.POSTGRES_DB }}
         POSTGRES_USER: ${{ env.POSTGRES_USER }}
         POSTGRES_PASSWORD:  ${{ env.POSTGRES_PASSWORD }}
-        DB_HOST: localhost
+        POSTGRES_HOST: localhost
       run: go test -v ./...
