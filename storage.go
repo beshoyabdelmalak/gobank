@@ -123,7 +123,7 @@ func (s *PostgresStore) TransferFunds(fromIban string, toIban string, amount flo
 		return err
 	}
 	if amount > fromAccount.Balance {
-		return fmt.Errorf("balance not sufficient")
+		return fmt.Errorf("Balance not sufficient")
 	}
 
 	updateBalance := func(iban string, balance float64) error {
@@ -151,7 +151,7 @@ func (s *PostgresStore) lockAccount(tx *sql.Tx, iban string) (*Account, error) {
 	// lockAccount locks the specified account for update and returns its details
 	var account Account
 
-	query := `SELECT iban, balance FROM accounts WHERE iban = $1 FOR UPDATE;`
+	query := `SELECT iban, balance FROM account WHERE iban = $1 FOR UPDATE;`
 	err := tx.QueryRow(query, iban).Scan(&account.IBAN, &account.Balance)
 	if err != nil {
 		return nil, err

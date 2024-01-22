@@ -12,15 +12,15 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	db, err := NewPostgresStore()
+	store, err := NewPostgresStore()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := db.Init(); err != nil {
+	if err := store.Init(); err != nil {
 		log.Fatal(err)
 	}
 
-	apiServer := NewAPIServer(":8000", db)
+	apiServer := NewAPIServer(":8000", store)
 	apiServer.Run()
 }

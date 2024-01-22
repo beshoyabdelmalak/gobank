@@ -46,7 +46,7 @@ type Account struct {
 }
 
 func NewAccount(firstName, lastName, password string) (*Account, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	encryptedPassword, err := HashPassword(password)
 	if err != nil {
 		return nil, err
 	}
@@ -55,9 +55,14 @@ func NewAccount(firstName, lastName, password string) (*Account, error) {
 		ID:                rand.Intn(10000),
 		FirstName:         firstName,
 		LastName:          lastName,
-		EncryptedPassword: string(bytes),
+		EncryptedPassword: encryptedPassword,
 		IBAN:              strconv.Itoa(rand.Intn(1000000)),
 		Balance:           float64(rand.Intn(1000000)),
 		CreatedAt:         time.Now().UTC(),
 	}, nil
+}
+
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
 }

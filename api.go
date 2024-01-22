@@ -59,7 +59,7 @@ func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !checkPasswordHash(loginReq.Password, account.EncryptedPassword) {
-		return fmt.Errorf("Access denied")
+		return fmt.Errorf("Access Denied")
 	}
 
 	token, err := CreateToken(loginReq.IBAN)
@@ -178,8 +178,8 @@ func validateTokenMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func getId(r *http.Request) (int, error) {
-	params := mux.Vars(r)
-	idStr := params["id"]
+	vars := mux.Vars(r)
+	idStr := vars["id"]
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		return id, fmt.Errorf("Invalid id: %v", idStr)
